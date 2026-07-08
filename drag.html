@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drag Race - Pro</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #1a1a2e;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            border: 2px solid #fff;
+            border-radius: 8px;
+            box-shadow: 0 0 30px rgba(0,0,0,0.8);
+        }
+        .controls {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #fff;
+            text-align: center;
+            background: rgba(0,0,0,0.7);
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-size: 14px;
+            pointer-events: none;
+        }
+        .controls span {
+            display: inline-block;
+            margin: 0 15px;
+            color: #ffd700;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="1000" height="600"></canvas>
+    <div class="controls">
+        <span>SPACE - Старт/Меню</span>
+        <span>↑ - Ускорение (зажать)</span>
+        <span>↓ - Замедление</span>
+        <span>I - Меню</span>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const WIDTH = 1000;
+        const HEIGHT = 600;
+
+        // Цвета
+        const COLORS = {
+            WHITE: '#FFFFFF',
+            BLACK: '#000000',
+            RED: '#FF0000',
+            GREEN: '#00FF00',
+            BLUE: '#0000FF',
+            GRAY: '#646464',
+            DARK_GRAY: '#323232',
+            YELLOW: '#FFFF00',
+            DARK_GREEN: '#006400',
+            BROWN: '#8B4513',
+            SKY_BLUE: '#87CEEB',
+            GRASS_GREEN: '#228B22',
+            LIGHT_GRAY: '#C8C8C8',
+            ORANGE: '#FFA500',
+            PURPLE: '#800080',
+            DARK_BLUE: '#00008B',
+            DARK_RED: '#8B0000',
+            GOLD: '#FFD700'
+        };
+
+        // Шрифты
+        function getFont(size) {
+            return `${size}px Arial`;
+        }
+
+        // Класс машины
+        class Car {
+            constructor(name, speed, price, owned = false, color = null) {
+                this.name = name;
+                this.baseSpeed = speed;
+                this.speed = speed;
+                this.maxSpeed = speed;
+                this.price = price;
+                this.owned = owned;
+                this.x = 150;
+                this.y = HEIGHT / 2 - 35;
+                this.width = 120;
+                this.height = 55;
+                this.progress = 0;
+                this.color = color || '#C83232';
+                this.engineLevel = 0;
+                this.turboLevel = 0;
+                this.tiresLevel = 0;
+            }
+
+            calculateSpeed() {
+                return this.baseSpeed + this.engineLevel * 5;
+            }
+
+            getAcceleration() {
+                return 1.0 + this.turboLevel * 5 + this.tiresLevel * 2;
+            }
+
+            getTuningCost(part) {
+                const costs = {
+                    engine: [500, 800, 1200, 1800, 2500],
+                    turbo: [600, 1000, 1500],
+                    tires: [400, 700, 1000]
+                };
+                if (part === 'engine' && this.engineLevel < 5) return costs.engine[this.engineLevel];
+                if (part === 'turbo' && this.turboLevel < 3) return costs.turbo[this.turboLevel];
+                if (part === 'tires' && this.tiresLevel < 3) return costs.tires[this.tiresLevel];
+                return null;
+            }
+
+            upgrade(part) {
+                const cost = this.getTuningCost(part);
+                if (cost === null) return { success: false, message: 'Max level reached!' };
+                if (part === 'engine') this.engineLevel++;
+                else if (part === 'turbo') this.turboLevel++;
+                else if (part === 'tires') this.tiresLevel++;
+                this.speed = this.calculateSpeed();
+                this.maxSpeed = this.speed;
+                return { success: true, message: `Upgraded! New speed: ${this.speed.toFixed(1)}` };
+            }
+
+            draw(yOffset = 0, flipped = false) {
+                const x = this.x;
+                const y = this.y + yOffset;
+                const color = this.color;
+
+                // Кузов
+                ctx.fillStyle = color;
+                ctx.shadowColor = 'rgba(255,255,255,0.1)';
+                ctx.shadowBlur = 10;
+                ctx.beginPath();
+                ctx.roundRect(x + 5, y + 10, this.width - 10, this.height - 10, 8);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Окна
+                ctx.fillStyle = '#64B4FF';
+                ctx.fillRect(x + 40, y + 15, 20, 15);
+                ctx.fillRect(x + 65, y + 15, 20, 15);
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(x + 40, y + 15, 20, 15);
+                ctx.strokeRect(x + 65, y + 15, 20, 15);
+
+                // Фары
+                ctx.fillStyle = '#FFFF00';
+                ctx.beginPath();
+                ctx.arc(x + 10, y + 20, 5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(x + 10, y + this.height - 10, 5, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Колеса
+                ctx.fillStyle = '#000';
+                ctx.beginPath();
+                ctx.arc(x + 30, y + this.height, 10, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(x + 30, y + 5, 10, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(x + 90, y + this.height, 10, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(x + 90, y + 5, 10, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Диски
+                ctx.fillStyle = '#C8C8C8';
+                ctx.beginPath();
+                ctx.arc(x + 30, y + this.height, 7, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(x + 30, y + 5, 7, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(x + 90, y + this.height, 7, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(x + 90, y + 5, 7, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            drawPreview(px, py) {
+                const scale = 0.7;
+                const tempX = this.x;
+                const tempY = this.y;
+                this.x = px;
+                this.y = py;
+                this.width = 80;
+                this.height = 37;
+                this.draw(0, false);
+                this.x = tempX;
+                this.y = tempY;
+                this.width = 120;
+                this.height = 55;
+            }
+        }
+
+        // Класс здания
+        class Building {
+            constructor(x, y, width, height, color) {
+                this.x = x;
+                this.y = y;
+                this.width = width;
+                this.height = height;
+                this.color = color;
+                this.windows = [];
+                const cols = Math.floor(width / 15);
+                const rows = Math.floor(height / 20);
+                for (let row = 0; row < rows; row++) {
+                    for (let col = 0; col < cols; col++) {
+                        if (Math.random() > 0.3) {
+                            const winColor = Math.random() > 0.5 ? '#FFFF00' : '#64B4FF';
+                            this.windows.push({
+                                x: x + 5 + col * 15,
+                                y: y + 5 + row * 20,
+                                w: 8,
+                                h: 10,
+                                color: winColor
+                            });
+                        }
+                    }
+                }
+            }
+
+            update(speed) {
+                this.x -= speed;
+                const newWindows = [];
+                for (const win of this.windows) {
+                    win.x -= speed;
+                    if (win.x > -win.w) {
+                        newWindows.push(win);
+                    }
+                }
+                this.windows = newWindows;
+                if (this.x < -this.width) {
+                    this.x = WIDTH + 100 + Math.random() * 400;
+                    this.windows = [];
+                    const cols = Math.floor(this.width / 15);
+                    const rows = Math.floor(this.height / 20);
+                    for (let row = 0; row < rows; row++) {
+                        for (let col = 0; col < cols; col++) {
+                            if (Math.random() > 0.3) {
+                                const winColor = Math.random() > 0.5 ? '#FFFF00' : '#64B4FF';
+                                this.windows.push({
+                                    x: this.x + 5 + col * 15,
+                                    y: this.y + 5 + row * 20,
+                                    w: 8,
+                                    h: 10,
+                                    color: winColor
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                ctx.strokeStyle = '#323232';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(this.x, this.y, this.width, this.height);
+                for (const win of this.windows) {
+                    ctx.fillStyle = win.color;
+                    ctx.fillRect(win.x, win.y, win.w, win.h);
+                    ctx.strokeStyle = '#323232';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(win.x, win.y, win.w, win.h);
+                }
+            }
+        }
+
+        // Класс объекта дороги
+        class RoadObject {
+            constructor(x, y, width, height, color) {
+                this.x = x;
+                this.y = y;
+                this.width = width;
+                this.height = height;
+                this.color = color;
+            }
+
+            update(speed) {
+                this.x -= speed;
+                if (this.x < -this.width) {
+                    this.x = WIDTH + 100 + Math.random() * 400;
+                }
+            }
+
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+            }
+        }
+
+        // Игра
+        class Game {
+            constructor() {
+                this.clock = 0;
+                this.running = true;
+                this.gameState = 'menu';
+                this.money = 2000;
+                this.selectedCarIndex = 0;
+                this.maxRaceDistance = 10000;
+                this.scrollSpeed = 0;
+                this.roadLines = [];
+                this.trees = [];
+                this.buildings = [];
+                this.gameTime = 0;
+                this.raceActive = false;
+                this.raceResult = null;
+                this.countdown = 3;
+                this.countdownState = 'ready';
+                this.upHeld = false;
+                this.tuningPartSelected = 0;
+                this.finishCrossed = false;
+
+                // Машины
+                this.carDefinitions = [
+                    { name: 'Blue Storm', speed: 5, price: 500, owned: true, color: '#3264FF' },
+                    { name: 'Green Phantom', speed: 6, price: 750, owned: false, color: '#32FF32' },
+                    { name: 'Red Fury', speed: 7, price: 1000, owned: false, color: '#FF3232' },
+                    { name: 'Purple Shadow', speed: 8, price: 1200, owned: false, color: '#9632FF' },
+                    { name: 'Gold Eagle', speed: 9, price: 1500, owned: false, color: '#FFD700' },
+                    { name: 'Orange Beast', speed: 11, price: 2500, owned: false, color: '#FF9600' }
+                ];
+
+                this.cars = [];
+                for (const def of this.carDefinitions) {
+                    const car = new Car(def.name, def.speed, def.price, def.owned, def.color);
+                    this.cars.push(car);
+                }
+
+                this.playerCar = this.cars[0];
+                this.playerCar.x = 150;
+                this.playerCar.y = HEIGHT / 2 - 60;
+                this.carIndex = 0;
+
+                this.enemyCar = new Car('Rival', 6, 0, false, '#FF3232');
+                this.enemyCar.x = 150;
+                this.enemyCar.y = HEIGHT / 2 + 40;
+
+                this.generateObjects();
+                this.setupControls();
+            }
+
+            generateObjects() {
+                this.roadLines = [];
+                this.trees = [];
+                this.buildings = [];
+
+                const roadCenter = HEIGHT / 2;
+                const roadTop = HEIGHT / 2 - 120;
+                const roadBottom = HEIGHT / 2 + 120;
+
+                for (let i = 0; i < 15000; i += 80) {
+                    this.roadLines.push(new RoadObject(i, roadCenter - 5, 40, 4, '#FFFFFF'));
+                    this.roadLines.push(new RoadObject(i, roadCenter + 5, 40, 4, '#FFFFFF'));
+                }
+
+                for (let i = 0; i < 15000; i += 200) {
+                    const treeHeight = 40 + Math.random() * 30;
+                    const treeColor = `rgb(0, ${100 + Math.random() * 80}, 0)`;
+                    this.trees.push(new RoadObject(i, 10, 20, treeHeight, treeColor));
+                    this.trees.push(new RoadObject(i + 5, 10 + treeHeight - 10, 10, 10, '#8B4513'));
+                }
+
+                for (let i = 0; i < 15000; i += 300) {
+                    const buildingHeight = 80 + Math.random() * 70;
+                    const buildingWidth = 40 + Math.random() * 20;
+                    const buildingColor = `rgb(${50 + Math.random() * 100}, ${50 + Math.random() * 100}, ${50 + Math.random() * 100})`;
+                    const building = new Building(i, HEIGHT - 20 - buildingHeight, buildingWidth, buildingHeight, buildingColor);
+                    this.buildings.push(building);
+                }
+            }
+
+            resetRace() {
+                this.playerCar.progress = 0;
+                this.playerCar.speed = this.playerCar.calculateSpeed();
+                this.enemyCar.progress = 0;
+                this.enemyCar.speed = 4 + Math.random() * 10;
+                this.enemyCar.maxSpeed = this.enemyCar.speed;
+                this.raceActive = false;
+                this.raceResult = null;
+                this.countdown = 3;
+                this.countdownState = 'countdown';
+                this.scrollSpeed = 0;
+                this.finishCrossed = false;
+                this.gameTime = 0;
+                this.generateObjects();
+            }
+
+            setupControls() {
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === ' ' || e.code === 'Space') {
+                        e.preventDefault();
+                        this.handleSpace();
+                    }
+                    if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        this.upHeld = true;
+                    }
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        if (this.raceActive) {
+                            this.playerCar.speed = Math.max(1, this.playerCar.speed - 0.5);
+                        }
+                    }
+                    if (e.key === 't' || e.key === 'T') {
+                        if (this.gameState === 'menu') this.gameState = 'tuning';
+                    }
+                    if (e.key === 's' || e.key === 'S') {
+                        if (this.gameState === 'menu') this.gameState = 'shop';
+                    }
+                    if (e.key === 'i' || e.key === 'I') {
+                        if (this.gameState === 'race') {
+                            this.gameState = 'menu';
+                            this.raceActive = false;
+                            this.raceResult = null;
+                        }
+                    }
+                    if (e.key === 'Escape') {
+                        if (this.gameState === 'tuning' || this.gameState === 'shop') {
+                            this.gameState = 'menu';
+                        }
+                    }
+                    if (e.key === 'Enter') {
+                        if (this.gameState === 'tuning') this.tuneCar();
+                        if (this.gameState === 'shop') this.buyCar();
+                    }
+                    if (e.key === 'ArrowDown' && this.gameState === 'tuning') {
+                        this.tuningPartSelected = (this.tuningPartSelected + 1) % 3;
+                    }
+                    if (e.key === 'ArrowUp' && this.gameState === 'tuning') {
+                        this.tuningPartSelected = (this.tuningPartSelected - 1 + 3) % 3;
+                    }
+                    if (e.key === 'ArrowDown' && this.gameState === 'shop') {
+                        this.selectedCarIndex = (this.selectedCarIndex + 1) % this.cars.length;
+                    }
+                    if (e.key === 'ArrowUp' && this.gameState === 'shop') {
+                        this.selectedCarIndex = (this.selectedCarIndex - 1 + this.cars.length) % this.cars.length;
+                    }
+                });
+
+                document.addEventListener('keyup', (e) => {
+                    if (e.key === 'ArrowUp') {
+                        this.upHeld = false;
+                    }
+                });
+            }
+
+            handleSpace() {
+                if (this.gameState === 'menu') {
+                    this.gameState = 'race';
+                    this.resetRace();
+                } else if (this.gameState === 'race') {
+                    if (this.raceResult !== null) {
+                        this.gameState = 'menu';
+                        this.raceResult = null;
+                        this.raceActive = false;
+                    } else if (!this.raceActive && this.countdownState === 'ready') {
+                        this.resetRace();
+                    }
+                }
+            }
+
+            tuneCar() {
+                const parts = ['engine', 'turbo', 'tires'];
+                const part = parts[this.tuningPartSelected];
+                const cost = this.playerCar.getTuningCost(part);
+                if (cost !== null && this.money >= cost) {
+                    this.money -= cost;
+                    const result = this.playerCar.upgrade(part);
+                    if (result.success) {
+                        console.log(`Success: ${result.message}`);
+                    }
+                } else if (cost !== null) {
+                    console.log(`Not enough money! Need $${cost}`);
+                } else {
+                    console.log('Max level reached!');
+                }
+            }
+
+            buyCar() {
+                const car = this.cars[this.selectedCarIndex];
+                if (!car.owned && this.money >= car.price) {
+                    this.money -= car.price;
+                    car.owned = true;
+                    this.playerCar = car;
+                    this.carIndex = this.selectedCarIndex;
+                    this.playerCar.x = 150;
+                    this.playerCar.y = HEIGHT / 2 - 60;
+                    console.log(`Bought ${car.name}!`);
+                }
+            }
+
+            update() {
+                if (this.gameState !== 'race') return;
+
+                this.gameTime++;
+
+                if (this.raceActive && this.upHeld && this.countdownState === 'racing') {
+                    const accel = this.playerCar.getAcceleration();
+                    this.playerCar.speed = Math.min(30, this.playerCar.speed + 0.05 * accel);
+                }
+
+                if (this.raceActive && !this.upHeld && this.countdownState === 'racing') {
+                    const baseSpeed = this.playerCar.calculateSpeed();
+                    if (this.playerCar.speed > baseSpeed) {
+                        this.playerCar.speed = Math.max(baseSpeed, this.playerCar.speed - 0.03);
+                    }
+                }
+
+                if (this.countdownState === 'countdown') {
+                    if (this.gameTime % 60 === 0) {
+                        this.countdown--;
+                        if (this.countdown <= 0) {
+                            this.countdownState = 'go';
+                            this.raceActive = true;
+                            this.gameTime = 0;
+                        }
+                    }
+                    return;
+                }
+
+                if (this.countdownState === 'go') {
+                    if (this.gameTime > 30) {
+                        this.countdownState = 'racing';
+                    }
+                    return;
+                }
+
+                if (this.raceActive && this.countdownState === 'racing') {
+                    this.playerCar.progress += this.playerCar.speed * 0.2;
+                    this.enemyCar.progress += this.enemyCar.speed * 0.2;
+
+                    this.scrollSpeed = (this.playerCar.speed + this.enemyCar.speed) / 4;
+
+                    for (const line of this.roadLines) line.update(this.scrollSpeed);
+                    for (const tree of this.trees) tree.update(this.scrollSpeed);
+                    for (const building of this.buildings) building.update(this.scrollSpeed);
+
+                    if (this.playerCar.progress >= this.maxRaceDistance && !this.finishCrossed) {
+                        this.finishCrossed = true;
+                        this.raceActive = false;
+                        this.raceResult = 'win';
+                        const winnings = 300 + Math.floor(this.playerCar.speed * 15);
+                        this.money += winnings;
+                        this.countdownState = 'ready';
+                        console.log(`You won! +$${winnings}`);
+                    } else if (this.enemyCar.progress >= this.maxRaceDistance) {
+                        this.raceActive = false;
+                        this.raceResult = 'lose';
+                        this.countdownState = 'ready';
+                        console.log(`You lost! Rival speed: ${this.enemyCar.speed.toFixed(1)}`);
+                    }
+                }
+            }
+
+            drawMenu() {
+                ctx.fillStyle = '#00008B';
+                ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+                ctx.fillStyle = '#FFD700';
+                ctx.font = getFont(100);
+                ctx.textAlign = 'center';
+                ctx.fillText('DRAG RACE', WIDTH / 2, 150);
+
+                ctx.fillStyle = '#FF0000';
+                ctx.font = getFont(72);
+                ctx.fillText('PRO', WIDTH / 2, 230);
+
+                const items = [
+                    { text: 'Press SPACE to Race', color: '#FFFFFF' },
+                    { text: 'Press T for Tuning', color: '#00FF00' },
+                    { text: 'Press S for Shop', color: '#0000FF' },
+                    { text: `Money: $${this.money}`, color: '#FFFF00' },
+                    { text: `Current Car: ${this.playerCar.name}`, color: '#FFFFFF' }
+                ];
+
+                let y = 300;
+                for (const item of items) {
+                    ctx.fillStyle = item.color;
+                    ctx.font = getFont(36);
+                    ctx.textAlign = 'center';
+                    ctx.fillText(item.text, WIDTH / 2, y);
+                    y += 50;
+                }
+
+                y += 30;
+                const stats = [
+                    `Speed: ${this.playerCar.speed.toFixed(1)}`,
+                    `Engine: ${this.playerCar.engineLevel}/5 (+${this.playerCar.engineLevel * 5} speed)`,
+                    `Turbo: ${this.playerCar.turboLevel}/3 (+${this.playerCar.turboLevel * 5} accel)`,
+                    `Tires: ${this.playerCar.tiresLevel}/3 (+${this.playerCar.tiresLevel * 2} accel)`
+                ];
+                for (const stat of stats) {
+                    ctx.fillStyle = '#C8C8C8';
+                    ctx.font = getFont(24);
+                    ctx.textAlign = 'center';
+                    ctx.fillText(stat, WIDTH / 2, y);
+                    y += 30;
+                }
+            }
+
+            drawTuning() {
+                ctx.fillStyle = '#00008B';
+                ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+                ctx.fillStyle = '#FFD700';
+                ctx.font = getFont(72);
+                ctx.textAlign = 'center';
+                ctx.fillText('TUNING', WIDTH / 2, 80);
+
+                ctx.fillStyle = '#FFD700';
+                ctx.font = getFont(36);
+                ctx.textAlign = 'left';
+                ctx.fillText(`Money: $${this.money}`, 50, 130);
+
+                // Информация о машине
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = getFont(24);
+                ctx.textAlign = 'left';
+                ctx.fillText(`${this.playerCar.name}`, 160, 160);
+                ctx.fillText(`Speed: ${this.playerCar.speed.toFixed(1)}`, 160, 190);
+                ctx.fillText(`Acceleration: ${this.playerCar.getAcceleration().toFixed(1)}`, 160, 220);
+
+                const parts = [
+                    { name: 'Engine', level: this.playerCar.engineLevel, max: 5, part: 'engine', bonus: `+${this.playerCar.engineLevel * 5} speed` },
+                    { name: 'Turbo', level: this.playerCar.turboLevel, max: 3, part: 'turbo', bonus: `+${this.playerCar.turboLevel * 5} accel` },
+                    { name: 'Tires', level: this.playerCar.tiresLevel, max: 3, part: 'tires', bonus: `+${this.playerCar.tiresLevel * 2} accel` }
+                ];
+
+                let y = 260;
+                for (let i = 0; i < parts.length; i++) {
+                    const p = parts[i];
+                    const color = i === this.tuningPartSelected ? '#FFD700' : '#FFFFFF';
+                    const prefix = i === this.tuningPartSelected ? '> ' : '  ';
+                    let text = `${prefix}${p.name}: ${p.level}/${p.max} ${p.bonus}`;
+                    if (p.level < p.max) {
+                        const cost = this.playerCar.getTuningCost(p.part);
+                        text += ` (Cost: $${cost})`;
+                    } else {
+                        text += ' (MAX)';
+                    }
+                    ctx.fillStyle = color;
+                    ctx.font = getFont(36);
+                    ctx.textAlign = 'center';
+                    ctx.fillText(text, WIDTH / 2, y);
+                    y += 60;
+                }
+
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = getFont(24);
+                ctx.textAlign = 'center';
+                ctx.fillText('UP/DOWN to select, ENTER to upgrade, ESC to exit', WIDTH / 2, HEIGHT - 50);
+            }
+
+            drawShop() {
+                ctx.fillStyle = '#00008B';
+                ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+                ctx.fillStyle = '#FFD700';
+                ctx.font = getFont(72);
+                ctx.textAlign = 'center';
+                ctx.fillText('SHOP', WIDTH / 2, 80);
+
+                ctx.fillStyle = '#FFD700';
+                ctx.font = getFont(36);
+                ctx.textAlign = 'left';
+                ctx.fillText(`Money: $${this.money}`, 50, 130);
+
+                const selectedCar = this.cars[this.selectedCarIndex];
+
+                // Информация о выбранной машине
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = getFont(24);
+                ctx.textAlign = 'left';
+                ctx.fillText(`Name: ${selectedCar.name}`, WIDTH - 180, 170);
+                ctx.fillText(`Speed: ${selectedCar.baseSpeed}`, WIDTH - 180, 200);
+                ctx.fillText(`Price: $${selectedCar.price}`, WIDTH - 180, 230);
+                ctx.fillText(`Status: ${selectedCar.owned ? 'OWNED' : 'NOT OWNED'}`, WIDTH - 180, 260);
+
+                let y = 180;
+                for (let i = 0; i < this.cars.length; i++) {
+                    const car = this.cars[i];
+                    const color = i === this.selectedCarIndex ? '#FFD700' : '#FFFFFF';
+                    const prefix = i === this.selectedCarIndex ? '> ' : '  ';
+                    let status = car.owned ? 'OWNED' : `$${car.price}`;
+                    if (car.owned && i === this.carIndex) status += ' (Active)';
+                    const text = `${prefix}${car.name} - Speed: ${car.baseSpeed} - ${status}`;
+                    ctx.fillStyle = color;
+                    ctx.font = getFont(30);
+                    ctx.textAlign = 'left';
+                    ctx.fillText(text, 150, y);
+                    y += 50;
+                }
+
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = getFont(24);
+                ctx.textAlign = 'center';
+                ctx.fillText('UP/DOWN to select, ENTER to buy, ESC to exit', WIDTH / 2, HEIGHT - 50);
+            }
+
+            drawRace() {
+                ctx.fillStyle = '#87CEEB';
+                ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+                const roadTop = HEIGHT / 2 - 120;
+                const roadBottom = HEIGHT / 2 + 120;
+
+                // Облака
+                for (let i = 0; i < WIDTH; i += 300) {
+                    const cloudX = (i + this.gameTime * 0.02) % (WIDTH + 200) - 100;
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.beginPath();
+                    ctx.ellipse(cloudX, 20, 35, 17, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.ellipse(cloudX + 30, 10, 40, 20, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.ellipse(cloudX + 60, 25, 30, 15, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // Солнце
+                ctx.fillStyle = '#FFFF00';
+                ctx.beginPath();
+                ctx.arc(920, 50, 40, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#FFFF96';
+                ctx.beginPath();
+                ctx.arc(920, 50, 35, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Трава
+                ctx.fillStyle = '#228B22';
+                ctx.fillRect(0, 0, WIDTH, roadTop);
+                ctx.fillRect(0, roadBottom, WIDTH, HEIGHT - roadBottom);
+
+                // Дорога
+                ctx.fillStyle = '#323232';
+                ctx.fillRect(0, roadTop, WIDTH, roadBottom - roadTop);
+                ctx.strokeStyle = '#646464';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(0, roadTop, WIDTH, roadBottom - roadTop);
+
+                // Бордюры
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillRect(0, roadTop, WIDTH, 4);
+                ctx.fillRect(0, roadBottom - 4, WIDTH, 4);
+
+                // Разделительная линия
+                ctx.strokeStyle = '#FFFFFF';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(0, HEIGHT / 2);
+                ctx.lineTo(WIDTH, HEIGHT / 2);
+                ctx.stroke();
+
+                // Здания
+                for (const building of this.buildings) building.draw();
+                for (const tree of this.trees) tree.draw();
+                for (const line of this.roadLines) line.draw();
+
+                // Машины
+                this.playerCar.draw(0, false);
+                this.enemyCar.draw(0, false);
+
+                // Текст RIVAL
+                ctx.fillStyle = '#FF0000';
+                ctx.font = getFont(24);
+                ctx.textAlign = 'left';
+                ctx.fillText('RIVAL', this.enemyCar.x + 30, this.enemyCar.y + this.enemyCar.height + 20);
+
+                // Текст PLAYER под машиной игрока
+                ctx.fillStyle = '#00FF00';
+                ctx.font = getFont(24);
+                ctx.textAlign = 'left';
+                ctx.fillText('YOU', this.playerCar.x + 40, this.playerCar.y + this.playerCar.height + 20);
+
+                this.drawRaceUI();
+
+                // Результат
+                if (this.raceResult === 'win') {
+                    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+                    ctx.fillStyle = '#00FF00';
+                    ctx.font = getFont(72);
+                    ctx.textAlign = 'center';
+                    ctx.fillText('YOU WIN!', WIDTH / 2, HEIGHT / 2 - 40);
+                    ctx.fillStyle = '#FFD700';
+                    ctx.font = getFont(36);
+                    ctx.fillText(`+$${300 + Math.floor(this.playerCar.speed * 15)}`, WIDTH / 2, HEIGHT / 2 + 30);
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = getFont(30);
+                    ctx.fillText('Press SPACE for menu', WIDTH / 2, HEIGHT / 2 + 80);
+                } else if (this.raceResult === 'lose') {
+                    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+                    ctx.fillStyle = '#FF0000';
+                    ctx.font = getFont(72);
+                    ctx.textAlign = 'center';
+                    ctx.fillText('YOU LOSE!', WIDTH / 2, HEIGHT / 2 - 40);
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = getFont(30);
+                    ctx.fillText('Press SPACE for menu', WIDTH / 2, HEIGHT / 2 + 30);
+                }
+            }
+
+            drawRaceUI() {
+                const roadTop = HEIGHT / 2 - 120;
+
+                // Деньги
+                ctx.fillStyle = '#FFD700';
+                ctx.font = getFont(36);
+                ctx.textAlign = 'left';
+                ctx.fillText(`$${this.money}`, 10, 40);
+
+                // Скорость
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = getFont(36);
+                ctx.fillText(`Speed: ${this.playerCar.speed.toFixed(1)}`, 10, 85);
+
+                // Индикатор ускорения
+                if (this.upHeld && this.raceActive && this.countdownState === 'racing') {
+                    ctx.fillStyle = '#FFD700';
+                    ctx.font = getFont(36);
+                    ctx.textAlign = 'center';
+                    ctx.fillText('ACCELERATING!', WIDTH / 2, roadTop - 60);
+                }
+
+                // Обратный отсчет
+                if (this.countdownState === 'countdown' && this.countdown > 0) {
+                    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+                    ctx.fillStyle = '#FFD700';
+                    ctx.font = getFont(72);
+                    ctx.textAlign = 'center';
+                    ctx.fillText(this.countdown.toString(), WIDTH / 2, HEIGHT / 2 - 20);
+                } else if (this.countdownState === 'go') {
+                    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+                    ctx.fillStyle = '#00FF00';
+                    ctx.font = getFont(72);
+                    ctx.textAlign = 'center';
+                    ctx.fillText('GO!', WIDTH / 2, HEIGHT / 2 - 20);
+                }
+
+                // Подсказки
+                if (!this.raceActive && this.raceResult === null && this.countdownState === 'ready') {
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = getFont(30);
+                    ctx.textAlign = 'center';
+                    ctx.fillText('Press SPACE to start (Hold UP to accelerate)', WIDTH / 2, HEIGHT - 40);
+                }
+
+                ctx.fillStyle = '#C8C8C8';
+                ctx.font = getFont(20);
+                ctx.textAlign = 'right';
+                ctx.fillText('Press I for menu', WIDTH - 20, HEIGHT - 20);
+            }
+
+            draw() {
+                ctx.clearRect(0, 0, WIDTH, HEIGHT);
+                if (this.gameState === 'menu') this.drawMenu();
+                else if (this.gameState === 'tuning') this.drawTuning();
+                else if (this.gameState === 'shop') this.drawShop();
+                else if (this.gameState === 'race') this.drawRace();
+            }
+
+            run() {
+                const gameLoop = () => {
+                    this.update();
+                    this.draw();
+                    requestAnimationFrame(gameLoop);
+                };
+                gameLoop();
+            }
+        }
+
+        // Полифилл для roundRect
+        if (!CanvasRenderingContext2D.prototype.roundRect) {
+            CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, radii) {
+                const r = typeof radii === 'number' ? radii : (radii || 0);
+                this.moveTo(x + r, y);
+                this.lineTo(x + w - r, y);
+                this.quadraticCurveTo(x + w, y, x + w, y + r);
+                this.lineTo(x + w, y + h - r);
+                this.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+                this.lineTo(x + r, y + h);
+                this.quadraticCurveTo(x, y + h, x, y + h - r);
+                this.lineTo(x, y + r);
+                this.quadraticCurveTo(x, y, x + r, y);
+                return this;
+            };
+        }
+
+        // Запуск игры
+        const game = new Game();
+        game.run();
+    </script>
+</body>
+</html>
